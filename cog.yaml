@@ -35,6 +35,8 @@ build:
     - "scipy"
     - "tqdm"
     - "psutil"
+    - "fastapi==0.104.1"
+    - "pydantic==2.4.2"
   run:
     - "git clone https://github.com/comfyanonymous/ComfyUI.git"
     - "cd ComfyUI && pip install -r requirements.txt"
