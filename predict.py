@@ -447,6 +447,19 @@ class Predictor(BasePredictor):
                 "_meta": {
                     "title": "Preview Image"
                 }
+            },
+            "266": {
+                "inputs": {
+                    "filename_prefix": "ComfyUI",
+                    "images": [
+                        "257",
+                        0
+                    ]
+                },
+                "class_type": "SaveImage",
+                "_meta": {
+                    "title": "Save Image"
+                }
             }
         }
         

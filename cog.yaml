@@ -39,6 +39,7 @@ build:
     - "cd ComfyUI/custom_nodes && git clone https://github.com/Fannovel16/comfyui_controlnet_aux.git"
     - "cd ComfyUI/custom_nodes && git clone https://github.com/kijai/ComfyUI-FluxTrainer.git"
     - "pip install insightface onnxruntime-gpu"
+    - "pip install face-recognition opencv-contrib-python"
     - "mkdir -p ComfyUI/models/checkpoints"
     - "mkdir -p ComfyUI/models/vae"
     - "mkdir -p ComfyUI/models/clip"
@@ -52,5 +53,7 @@ build:
     - "wget -O ComfyUI/models/controlnet/flux-depth-controlnet-v3.safetensors https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Depth/resolve/main/diffusion_pytorch_model.safetensors"
     - "wget -O ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors"
     - "wget -O ComfyUI/models/insightface/inswapper_128.onnx https://huggingface.co/MonsterMMORPG/tools/resolve/main/inswapper_128.onnx"
+    - "wget -O ComfyUI/models/facerestore_models/GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth"
+    - "mkdir -p ComfyUI/models/facerestore_models"
 
 predict: "predict.py:Predictor" 
