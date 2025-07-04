@@ -30,8 +30,63 @@ class Predictor(BasePredictor):
         self.output_dir.mkdir(exist_ok=True)
         self.temp_dir.mkdir(exist_ok=True)
         
+        # Download models if they don't exist
+        self.download_models()
+        
         # Start ComfyUI server
         self.start_comfyui_server()
+    
+    def download_models(self):
+        """Download required models if they don't exist"""
+        models_to_download = [
+            {
+                "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
+                "path": "ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors",
+                "path": "ComfyUI/models/vae/ae.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
+                "path": "ComfyUI/models/clip/clip_l.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors",
+                "path": "ComfyUI/models/clip/t5xxl_fp8_e4m3fn.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Depth/resolve/main/diffusion_pytorch_model.safetensors",
+                "path": "ComfyUI/models/controlnet/flux-depth-controlnet-v3.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
+                "path": "ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors"
+            },
+            {
+                "url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/inswapper_128.onnx",
+                "path": "ComfyUI/models/insightface/inswapper_128.onnx"
+            },
+            {
+                "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
+                "path": "ComfyUI/models/facerestore_models/GFPGANv1.4.pth"
+            }
+        ]
+        
+        for model in models_to_download:
+            model_path = Path(f"/src/{model['path']}")
+            if not model_path.exists():
+                print(f"Downloading {model_path.name}...")
+                self.download_file(model['url'], model_path)
+                print(f"Downloaded {model_path.name}")
+            else:
+                print(f"Model {model_path.name} already exists, skipping download")
+    
+    def download_file(self, url: str, path: Path):
+        """Download a file from URL to the specified path"""
+        import subprocess
+        path.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["wget", "-O", str(path), url], check=True)
     
     def start_comfyui_server(self):
         """Start the ComfyUI server"""
