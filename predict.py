@@ -294,7 +294,7 @@ class Predictor(BasePredictor):
             },
             "204": {
                 "inputs": {
-                    "unet_name": "flux1DevFp8_v10.safetensors",
+                    "unet_name": "flux1-dev-fp8.safetensors",
                     "weight_dtype": "fp8_e4m3fn"
                 },
                 "class_type": "UNETLoader",
