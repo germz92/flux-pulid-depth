@@ -11,6 +11,10 @@ build:
     - "wget"
     - "curl"
     - "git"
+    - "cmake"
+    - "build-essential"
+    - "libboost-all-dev"
+    - "pkg-config"
   python_version: "3.10"
   python_packages:
     - "torch==2.0.1"
@@ -39,6 +43,7 @@ build:
     - "cd ComfyUI/custom_nodes && git clone https://github.com/Fannovel16/comfyui_controlnet_aux.git"
     - "cd ComfyUI/custom_nodes && git clone https://github.com/kijai/ComfyUI-FluxTrainer.git"
     - "pip install insightface onnxruntime-gpu"
+    - "pip install dlib"
     - "pip install face-recognition opencv-contrib-python"
     - "mkdir -p ComfyUI/models/checkpoints"
     - "mkdir -p ComfyUI/models/vae"
