@@ -43,6 +43,11 @@ class Predictor(BasePredictor):
         
         # Start ComfyUI server
         self.start_comfyui_server()
+        
+        # If PuLID nodes aren't loaded, try restarting ComfyUI
+        if not self.check_pulid_nodes_loaded():
+            print("🔄 PuLID nodes not found, restarting ComfyUI...")
+            self.restart_comfyui_server()
     
     def download_models(self):
         """Download required models if they don't exist"""
@@ -96,6 +101,31 @@ class Predictor(BasePredictor):
         path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["wget", "-O", str(path), url], check=True)
     
+    def check_pulid_nodes_loaded(self) -> bool:
+        """Check if PuLID nodes are properly loaded"""
+        try:
+            response = requests.get("http://127.0.0.1:8188/object_info")
+            if response.status_code == 200:
+                object_info = response.json()
+                expected_nodes = ["PulidFluxModelLoader", "ApplyPulidFlux"]
+                return any(node in object_info for node in expected_nodes)
+        except:
+            pass
+        return False
+    
+    def restart_comfyui_server(self):
+        """Restart the ComfyUI server"""
+        try:
+            if hasattr(self, 'server_process'):
+                self.server_process.terminate()
+                self.server_process.wait(timeout=10)
+        except:
+            pass
+        
+        print("🔄 Restarting ComfyUI server...")
+        time.sleep(5)
+        self.start_comfyui_server()
+    
     def start_comfyui_server(self):
         """Start the ComfyUI server"""
         os.chdir(str(self.comfy_dir))
@@ -120,14 +150,33 @@ class Predictor(BasePredictor):
             object_info_response = requests.get("http://127.0.0.1:8188/object_info")
             if object_info_response.status_code == 200:
                 object_info = object_info_response.json()
-                pulid_nodes = ["PulidFluxModelLoader", "PulidFluxInsightFaceLoader", "PulidFluxEvaClipLoader", "ApplyPulidFlux"]
-                loaded_pulid_nodes = [node for node in pulid_nodes if node in object_info]
+                all_nodes = list(object_info.keys())
                 
-                if loaded_pulid_nodes:
-                    print(f"✅ PuLID custom nodes loaded: {loaded_pulid_nodes}")
+                # Look for any PuLID related nodes
+                pulid_related = [node for node in all_nodes if 'pulid' in node.lower() or 'PuLID' in node or 'Pulid' in node]
+                
+                # Check for specific expected nodes
+                expected_nodes = ["PulidFluxModelLoader", "PulidFluxInsightFaceLoader", "PulidFluxEvaClipLoader", "ApplyPulidFlux"]
+                found_expected = [node for node in expected_nodes if node in all_nodes]
+                
+                print(f"Total nodes available: {len(all_nodes)}")
+                print(f"PuLID related nodes found: {pulid_related}")
+                print(f"Expected PuLID nodes found: {found_expected}")
+                
+                if found_expected:
+                    print(f"✅ PuLID custom nodes loaded: {found_expected}")
                 else:
-                    print("❌ PuLID custom nodes not found in object_info")
-                    print("Available nodes:", list(object_info.keys())[:20])  # Show first 20 nodes
+                    print("❌ Expected PuLID custom nodes not found")
+                    print("Sample available nodes:", all_nodes[:30])  # Show first 30 nodes
+                    
+                    # Also check ComfyUI server logs
+                    try:
+                        if hasattr(self, 'server_process'):
+                            stdout, stderr = self.server_process.communicate(timeout=1)
+                            if stderr:
+                                print("ComfyUI stderr:", stderr.decode()[-1000:])  # Last 1000 chars
+                    except:
+                        pass
             
         except Exception as e:
             print(f"Error starting ComfyUI server: {e}")
