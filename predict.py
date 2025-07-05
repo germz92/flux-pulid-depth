@@ -27,10 +27,14 @@ class Predictor(BasePredictor):
         # Create temp directory
         self.temp_dir.mkdir(exist_ok=True)
         
-        # Verify models were downloaded at build time
-        print("🔍 Verifying models exist from build time...")
+        # Verify build-time models were downloaded
+        print("🔍 Verifying build-time models exist...")
         if not self.check_models_exist():
-            raise RuntimeError("❌ Required models missing! Check build logs.")
+            raise RuntimeError("❌ Build-time models missing! Check build logs.")
+        
+        # Download large models at runtime (Flux ~12GB, T5 ~9GB)
+        print("📥 Downloading large models at runtime...")
+        self.download_large_models()
         
         # Start ComfyUI server
         self.start_comfyui_server()
@@ -43,12 +47,10 @@ class Predictor(BasePredictor):
         print("✅ Setup complete - PuLID nodes are available")
     
     def check_models_exist(self):
-        """Verify that all required models exist (downloaded at build time)"""
-        required_models = [
-            "/src/ComfyUI/models/diffusion_models/flux1-dev-fp8.safetensors",
+        """Verify that build-time models exist (smaller models downloaded during build)"""
+        build_time_models = [
             "/src/ComfyUI/models/vae/ae.safetensors",
-            "/src/ComfyUI/models/clip/clip_l.safetensors",
-            "/src/ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
+            "/src/ComfyUI/models/clip/clip_l.safetensors", 
             "/src/ComfyUI/models/controlnet/FLUX/flux-depth-controlnet-v3.safetensors",
             "/src/ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors",
             "/src/ComfyUI/models/insightface/models/antelopev2/inswapper_128.onnx",
@@ -57,15 +59,15 @@ class Predictor(BasePredictor):
         ]
         
         missing_models = []
-        for model_path in required_models:
+        for model_path in build_time_models:
             if not Path(model_path).exists():
                 missing_models.append(model_path)
         
         if missing_models:
-            print(f"❌ Missing models: {missing_models}")
+            print(f"❌ Missing build-time models: {missing_models}")
             return False
         else:
-            print("✅ All required models found")
+            print("✅ All build-time models found")
             return True
     
     def check_pulid_nodes_loaded(self) -> bool:
@@ -757,6 +759,46 @@ class Predictor(BasePredictor):
             return str(latest_file)
         else:
             raise RuntimeError("No output images found")
+    
+    def download_large_models(self):
+        """Download large models at runtime (Flux ~12GB, T5 ~9GB)"""
+        large_models = [
+            {
+                "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
+                "path": "/src/ComfyUI/models/diffusion_models/flux1-dev-fp8.safetensors",
+                "size": "~12GB"
+            },
+            {
+                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", 
+                "path": "/src/ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
+                "size": "~9GB"
+            }
+        ]
+        
+        for model in large_models:
+            model_path = Path(model['path'])
+            if not model_path.exists():
+                print(f"📥 Downloading {model['size']} model: {model_path.name}")
+                try:
+                    import subprocess
+                    model_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Use wget with progress bar
+                    result = subprocess.run([
+                        "wget", "--progress=bar:force", "-O", str(model_path), model['url']
+                    ], capture_output=True, text=True)
+                    
+                    if result.returncode != 0:
+                        print(f"❌ Download failed: {result.stderr}")
+                        raise Exception(f"Failed to download {model_path.name}")
+                    else:
+                        print(f"✅ Downloaded {model_path.name}")
+                        
+                except Exception as e:
+                    print(f"❌ Error downloading {model_path.name}: {e}")
+                    raise
+            else:
+                print(f"✅ Large model already exists: {model_path.name}")
     
     def __del__(self):
         """Clean up resources"""
