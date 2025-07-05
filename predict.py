@@ -761,7 +761,7 @@ class Predictor(BasePredictor):
             raise RuntimeError("No output images found")
     
     def download_large_models(self):
-        """Download large models at runtime (Flux ~12GB, T5 ~9GB, ControlNet ~3GB, PuLID ~900MB, GFPGAN ~300MB)"""
+        """Download large models at runtime (Flux ~12GB, T5 ~9GB, ControlNet ~3GB, PuLID ~900MB, GFPGAN ~300MB, EVA CLIP ~850MB)"""
         large_models = [
             {
                 "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
@@ -787,6 +787,11 @@ class Predictor(BasePredictor):
                 "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
                 "path": "/src/ComfyUI/models/facerestore_models/GFPGANv1.4.pth",
                 "size": "~300MB"
+            },
+            {
+                "url": "https://huggingface.co/QuanSun/EVA-CLIP/resolve/main/EVA02_CLIP_L_336_psz14_s6B.pt",
+                "path": "/src/ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth",
+                "size": "~850MB"
             }
         ]
         
