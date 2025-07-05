@@ -54,7 +54,7 @@ class Predictor(BasePredictor):
         models_to_download = [
             {
                 "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
-                "path": "ComfyUI/models/checkpoints/flux1-dev-fp8.safetensors"
+                "path": "ComfyUI/models/diffusion_models/flux1-dev-fp8.safetensors"
             },
             {
                 "url": "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors",
@@ -83,6 +83,10 @@ class Predictor(BasePredictor):
             {
                 "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
                 "path": "ComfyUI/models/facerestore_models/GFPGANv1.4.pth"
+            },
+            {
+                "url": "https://huggingface.co/BAAI/EVA/resolve/main/eva_clip_l_14_336.pth",
+                "path": "ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth"
             }
         ]
         
@@ -90,8 +94,11 @@ class Predictor(BasePredictor):
             model_path = Path(f"/src/{model['path']}")
             if not model_path.exists():
                 print(f"Downloading {model_path.name}...")
-                self.download_file(model['url'], model_path)
-                print(f"Downloaded {model_path.name}")
+                try:
+                    self.download_file(model['url'], model_path)
+                    print(f"Downloaded {model_path.name}")
+                except Exception as e:
+                    print(f"Failed to download {model_path.name}: {e}")
             else:
                 print(f"Model {model_path.name} already exists, skipping download")
     
@@ -99,18 +106,28 @@ class Predictor(BasePredictor):
         """Download a file from URL to the specified path"""
         import subprocess
         path.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["wget", "-O", str(path), url], check=True)
+        result = subprocess.run(["wget", "-O", str(path), url], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"wget failed: {result.stderr}")
+            raise Exception(f"Download failed: {result.stderr}")
     
     def check_pulid_nodes_loaded(self) -> bool:
         """Check if PuLID nodes are properly loaded"""
         try:
-            response = requests.get("http://127.0.0.1:8188/object_info")
+            response = requests.get("http://127.0.0.1:8188/object_info", timeout=5)
             if response.status_code == 200:
                 object_info = response.json()
-                expected_nodes = ["PulidFluxModelLoader", "ApplyPulidFlux"]
-                return any(node in object_info for node in expected_nodes)
-        except:
-            pass
+                required_nodes = [
+                    "PulidFluxModelLoader",
+                    "PulidFluxInsightFaceLoader", 
+                    "PulidFluxEvaClipLoader",
+                    "ApplyPulidFlux"
+                ]
+                found_nodes = [node for node in required_nodes if node in object_info]
+                print(f"Found PuLID nodes: {found_nodes}")
+                return len(found_nodes) >= 3  # At least most nodes should be available
+        except Exception as e:
+            print(f"Error checking PuLID nodes: {e}")
         return False
     
     def restart_comfyui_server(self):
@@ -142,6 +159,16 @@ class Predictor(BasePredictor):
                     if py_files:
                         print(f"    🐍 Python files: {[f.name for f in py_files[:5]]}")  # Show first 5
         
+        # Check if models exist
+        models_dir = self.comfy_dir / "models"
+        print(f"🎯 Checking models directory: {models_dir}")
+        if models_dir.exists():
+            for subdir in ["diffusion_models", "vae", "clip", "pulid"]:
+                model_path = models_dir / subdir
+                if model_path.exists():
+                    files = list(model_path.glob("*"))
+                    print(f"  📂 {subdir}: {[f.name for f in files[:3]]}")  # Show first 3
+        
         # Start ComfyUI server in the background
         print("🚀 Starting ComfyUI server...")
         self.server_process = subprocess.Popen([
@@ -150,7 +177,7 @@ class Predictor(BasePredictor):
             "--port", "8188",
             "--disable-auto-launch",
             "--verbose"  # Add verbose logging
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
            universal_newlines=True, bufsize=1)
         
         # Wait for server to start and capture initial logs
@@ -161,10 +188,10 @@ class Predictor(BasePredictor):
         start_time = time.time()
         server_logs = []
         
-        while time.time() - start_time < 20:  # Wait up to 20 seconds
+        while time.time() - start_time < 30:  # Wait up to 30 seconds
             # Check if server is responsive
             try:
-                response = requests.get("http://127.0.0.1:8188", timeout=1)
+                response = requests.get("http://127.0.0.1:8188", timeout=2)
                 if response.status_code == 200:
                     print("✅ ComfyUI server is running")
                     break
@@ -175,9 +202,9 @@ class Predictor(BasePredictor):
             if self.server_process.poll() is None:  # Process is still running
                 try:
                     # Read available output without blocking
-                    ready, _, _ = select.select([self.server_process.stdout, self.server_process.stderr], [], [], 0.1)
-                    for stream in ready:
-                        line = stream.readline()
+                    ready, _, _ = select.select([self.server_process.stdout], [], [], 0.1)
+                    if ready:
+                        line = self.server_process.stdout.readline()
                         if line:
                             line = line.strip()
                             server_logs.append(line)
@@ -197,11 +224,11 @@ class Predictor(BasePredictor):
         
         # Check if server is running
         try:
-            response = requests.get("http://127.0.0.1:8188")
+            response = requests.get("http://127.0.0.1:8188", timeout=5)
             print("✅ ComfyUI server is responding")
             
             # Check available object info to see if custom nodes are loaded
-            object_info_response = requests.get("http://127.0.0.1:8188/object_info")
+            object_info_response = requests.get("http://127.0.0.1:8188/object_info", timeout=10)
             if object_info_response.status_code == 200:
                 object_info = object_info_response.json()
                 all_nodes = list(object_info.keys())
@@ -213,27 +240,34 @@ class Predictor(BasePredictor):
                 expected_nodes = ["PulidFluxModelLoader", "PulidFluxInsightFaceLoader", "PulidFluxEvaClipLoader", "ApplyPulidFlux"]
                 found_expected = [node for node in expected_nodes if node in all_nodes]
                 
-                print(f"Total nodes available: {len(all_nodes)}")
-                print(f"PuLID related nodes found: {pulid_related}")
-                print(f"Expected PuLID nodes found: {found_expected}")
+                print(f"📊 Total nodes available: {len(all_nodes)}")
+                print(f"🔍 PuLID related nodes found: {pulid_related}")
+                print(f"✅ Expected PuLID nodes found: {found_expected}")
                 
                 if found_expected:
-                    print(f"✅ PuLID custom nodes loaded: {found_expected}")
+                    print(f"🎉 PuLID custom nodes loaded successfully: {found_expected}")
                 else:
-                    print("❌ Expected PuLID custom nodes not found")
-                    print("Sample available nodes:", all_nodes[:30])  # Show first 30 nodes
+                    print("⚠️  Expected PuLID custom nodes not found")
+                    print("🔧 Available nodes sample:", all_nodes[:20])  # Show first 20 nodes
                     
-                    # Also check ComfyUI server logs
-                    try:
-                        if hasattr(self, 'server_process'):
-                            stdout, stderr = self.server_process.communicate(timeout=1)
-                            if stderr:
-                                print("ComfyUI stderr:", stderr.decode()[-1000:])  # Last 1000 chars
-                    except:
-                        pass
+                    # Check for flux-related nodes
+                    flux_nodes = [node for node in all_nodes if 'flux' in node.lower() or 'Flux' in node]
+                    print(f"🌊 Flux related nodes: {flux_nodes}")
+                    
+                    # Check for unet loader
+                    unet_nodes = [node for node in all_nodes if 'unet' in node.lower() or 'UNET' in node]
+                    print(f"🔗 UNET related nodes: {unet_nodes}")
+                    
+                    # Show server error logs if any
+                    print("📋 Recent server output:")
+                    for log in server_logs[-10:]:
+                        print(f"   {log}")
             
         except Exception as e:
-            print(f"Error starting ComfyUI server: {e}")
+            print(f"❌ Error checking ComfyUI server: {e}")
+            print("📋 Server logs:")
+            for log in server_logs[-20:]:
+                print(f"   {log}")
             raise
     
     def predict(
@@ -652,9 +686,34 @@ class Predictor(BasePredictor):
         return json.dumps(default_workflow)
     
     def get_basic_flux_workflow(self) -> str:
-        """Return a basic Flux workflow without PuLID (fallback)"""
+        """Return a simple Flux workflow without PuLID (fallback)"""
+        # Use a very basic KSampler workflow instead of complex SamplerCustomAdvanced
         basic_workflow = {
-            "1": {
+            "3": {
+                "inputs": {
+                    "seed": 42,
+                    "steps": 20,
+                    "cfg": 1.0,
+                    "sampler_name": "euler",
+                    "scheduler": "simple",
+                    "denoise": 1,
+                    "model": ["4", 0],
+                    "positive": ["6", 0],
+                    "negative": ["7", 0],
+                    "latent_image": ["5", 0]
+                },
+                "class_type": "KSampler",
+                "_meta": {"title": "KSampler"}
+            },
+            "4": {
+                "inputs": {
+                    "unet_name": "flux1-dev-fp8.safetensors",
+                    "weight_dtype": "fp8_e4m3fn"
+                },
+                "class_type": "UNETLoader",
+                "_meta": {"title": "Load Diffusion Model"}
+            },
+            "5": {
                 "inputs": {
                     "width": 768,
                     "height": 1024,
@@ -663,96 +722,62 @@ class Predictor(BasePredictor):
                 "class_type": "EmptySD3LatentImage",
                 "_meta": {"title": "Empty Latent Image"}
             },
-            "2": {
-                "inputs": {
-                    "text": "wearing western outfit with a cowboy hat at a bar in nashville",
-                    "clip": ["4", 0]
-                },
-                "class_type": "CLIPTextEncode",
-                "_meta": {"title": "CLIP Text Encode (Prompt)"}
-            },
-            "3": {
-                "inputs": {
-                    "text": "nsfw, nude, deformed, ugly, extra limbs, blurry",
-                    "clip": ["4", 0]
-                },
-                "class_type": "CLIPTextEncode", 
-                "_meta": {"title": "CLIP Text Encode (Negative)"}
-            },
-            "4": {
-                "inputs": {
-                    "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
-                    "clip_name2": "clip_l.safetensors",
-                    "type": "flux"
-                },
-                "class_type": "DualCLIPLoader",
-                "_meta": {"title": "DualCLIPLoader"}
-            },
-            "5": {
-                "inputs": {
-                    "unet_name": "flux1-dev-fp8.safetensors",
-                    "weight_dtype": "fp8_e4m3fn"
-                },
-                "class_type": "UNETLoader",
-                "_meta": {"title": "Load Diffusion Model"}
-            },
             "6": {
                 "inputs": {
                     "guidance": 3.5,
-                    "conditioning": ["2", 0]
+                    "conditioning": ["10", 0]
                 },
                 "class_type": "FluxGuidance",
                 "_meta": {"title": "FluxGuidance"}
             },
             "7": {
                 "inputs": {
-                    "noise": ["9", 0],
-                    "guider": ["6", 0],
-                    "sampler": ["10", 0],
-                    "sigmas": ["11", 0],
-                    "latent_image": ["1", 0]
+                    "guidance": 3.5,
+                    "conditioning": ["11", 0]
                 },
-                "class_type": "SamplerCustomAdvanced",
-                "_meta": {"title": "SamplerCustomAdvanced"}
+                "class_type": "FluxGuidance",
+                "_meta": {"title": "FluxGuidance Negative"}
             },
             "8": {
                 "inputs": {
-                    "samples": ["7", 0],
-                    "vae": ["12", 0]
+                    "samples": ["3", 0],
+                    "vae": ["9", 0]
                 },
                 "class_type": "VAEDecode",
                 "_meta": {"title": "VAE Decode"}
             },
             "9": {
                 "inputs": {
-                    "noise_seed": 42
-                },
-                "class_type": "RandomNoise",
-                "_meta": {"title": "RandomNoise"}
-            },
-            "10": {
-                "inputs": {
-                    "sampler_name": "euler"
-                },
-                "class_type": "KSamplerSelect",
-                "_meta": {"title": "KSamplerSelect"}
-            },
-            "11": {
-                "inputs": {
-                    "scheduler": "simple",
-                    "steps": 20,
-                    "denoise": 1.0,
-                    "model": ["5", 0]
-                },
-                "class_type": "BasicScheduler",
-                "_meta": {"title": "BasicScheduler"}
-            },
-            "12": {
-                "inputs": {
                     "vae_name": "ae.safetensors"
                 },
                 "class_type": "VAELoader",
                 "_meta": {"title": "Load VAE"}
+            },
+            "10": {
+                "inputs": {
+                    "text": "wearing western outfit with a cowboy hat at a bar in nashville",
+                    "clip": ["12", 0]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {"title": "CLIP Text Encode (Prompt)"}
+            },
+            "11": {
+                "inputs": {
+                    "text": "nsfw, nude, deformed, ugly, extra limbs, blurry",
+                    "clip": ["12", 0]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {"title": "CLIP Text Encode (Negative)"}
+            },
+            "12": {
+                "inputs": {
+                    "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+                    "clip_name2": "clip_l.safetensors",
+                    "type": "flux",
+                    "device": "default"
+                },
+                "class_type": "DualCLIPLoader",
+                "_meta": {"title": "DualCLIPLoader"}
             },
             "13": {
                 "inputs": {
@@ -770,37 +795,39 @@ class Predictor(BasePredictor):
                              pulid_weight: float, controlnet_strength: float, seed: int, enable_face_swap: bool) -> Dict:
         """Update workflow with user inputs"""
         
-        # Check if this is the basic workflow (has node "2") or full workflow (has node "203")
-        is_basic_workflow = "2" in workflow and "203" not in workflow
+        # Check if this is the basic workflow (has node "3" KSampler) or full workflow (has node "203")
+        is_basic_workflow = "3" in workflow and workflow["3"]["class_type"] == "KSampler"
         
         if is_basic_workflow:
             # Update basic Flux workflow
             print("🔧 Updating basic Flux workflow inputs")
             
-            # Node 2: Main text prompt (positive)
-            if "2" in workflow:
-                workflow["2"]["inputs"]["text"] = prompt
+            # Node 10: Main text prompt (positive)
+            if "10" in workflow:
+                workflow["10"]["inputs"]["text"] = prompt
             
-            # Node 3: Negative prompt  
-            if "3" in workflow:
-                workflow["3"]["inputs"]["text"] = negative_prompt
+            # Node 11: Negative prompt  
+            if "11" in workflow:
+                workflow["11"]["inputs"]["text"] = negative_prompt
             
-            # Node 1: Image dimensions
-            if "1" in workflow:
-                workflow["1"]["inputs"]["width"] = width
-                workflow["1"]["inputs"]["height"] = height
+            # Node 5: Image dimensions
+            if "5" in workflow:
+                workflow["5"]["inputs"]["width"] = width
+                workflow["5"]["inputs"]["height"] = height
             
-            # Node 6: Flux guidance
+            # Node 6: Flux guidance (positive)
             if "6" in workflow:
                 workflow["6"]["inputs"]["guidance"] = guidance
             
-            # Node 9: Seed
-            if "9" in workflow:
-                workflow["9"]["inputs"]["noise_seed"] = seed if seed >= 0 else int(time.time())
+            # Node 7: Flux guidance (negative)
+            if "7" in workflow:
+                workflow["7"]["inputs"]["guidance"] = guidance
             
-            # Node 11: Steps
-            if "11" in workflow:
-                workflow["11"]["inputs"]["steps"] = steps
+            # Node 3: KSampler settings
+            if "3" in workflow:
+                workflow["3"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
+                workflow["3"]["inputs"]["steps"] = steps
+                workflow["3"]["inputs"]["cfg"] = cfg
         
         else:
             # Update full PuLID workflow
