@@ -25,10 +25,14 @@ class Predictor(BasePredictor):
         self.output_dir = self.comfy_dir / "output"
         self.temp_dir = self.comfy_dir / "temp"
         
+        # Ensure ComfyUI directory exists
+        if not self.comfy_dir.exists():
+            raise FileNotFoundError(f"ComfyUI directory not found at {self.comfy_dir}")
+        
         # Create necessary directories
-        self.models_dir.mkdir(exist_ok=True)
-        self.output_dir.mkdir(exist_ok=True)
-        self.temp_dir.mkdir(exist_ok=True)
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
         
         # Download models if they don't exist
         self.download_models()
