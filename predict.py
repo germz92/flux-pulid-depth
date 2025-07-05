@@ -105,12 +105,23 @@ class Predictor(BasePredictor):
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         # Wait for server to start
-        time.sleep(10)
+        time.sleep(15)  # Increased wait time for custom nodes to load
         
         # Check if server is running
         try:
             response = requests.get("http://127.0.0.1:8188")
             print("ComfyUI server is running")
+            
+            # Check available object info to see if custom nodes are loaded
+            object_info_response = requests.get("http://127.0.0.1:8188/object_info")
+            if object_info_response.status_code == 200:
+                object_info = object_info_response.json()
+                if "PulidFluxModelLoader" in object_info:
+                    print("✅ PuLID custom nodes are loaded")
+                else:
+                    print("❌ PuLID custom nodes not found in object_info")
+                    print("Available nodes:", list(object_info.keys())[:10])  # Show first 10 nodes
+            
         except Exception as e:
             print(f"Error starting ComfyUI server: {e}")
             raise
