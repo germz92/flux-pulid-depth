@@ -52,7 +52,6 @@ build:
     - "pip install dlib"
     - "pip install face-recognition opencv-contrib-python"
     - "pip install timm safetensors"
-    - "pip install eva-clip-torch"
     - "pip install controlnet-aux"
     - "mkdir -p /src/ComfyUI/models/checkpoints"
     - "mkdir -p /src/ComfyUI/models/vae"
