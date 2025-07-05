@@ -44,10 +44,12 @@ class Predictor(BasePredictor):
         # Start ComfyUI server
         self.start_comfyui_server()
         
-        # If PuLID nodes aren't loaded, try restarting ComfyUI
+        # Verify PuLID nodes are available - fail fast if not
+        print("🔍 Verifying PuLID custom nodes are installed...")
         if not self.check_pulid_nodes_loaded():
-            print("🔄 PuLID nodes not found, restarting ComfyUI...")
-            self.restart_comfyui_server()
+            raise RuntimeError("❌ PuLID custom nodes not found! Check installation and ComfyUI logs.")
+        
+        print("✅ Setup complete - PuLID nodes are available")
     
     def download_models(self):
         """Download required models if they don't exist"""
@@ -58,7 +60,7 @@ class Predictor(BasePredictor):
             },
             {
                 "url": "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors",
-                "path": "ComfyUI/models/vae/ae.safetensors"
+                "path": "ComfyUI/models/vae/ae.sft"
             },
             {
                 "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
@@ -66,11 +68,11 @@ class Predictor(BasePredictor):
             },
             {
                 "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors",
-                "path": "ComfyUI/models/clip/t5xxl_fp8_e4m3fn.safetensors"
+                "path": "ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors"
             },
             {
                 "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Depth/resolve/main/diffusion_pytorch_model.safetensors",
-                "path": "ComfyUI/models/controlnet/flux-depth-controlnet-v3.safetensors"
+                "path": "ComfyUI/models/controlnet/FLUX/flux-depth-controlnet-v3.safetensors"
             },
             {
                 "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
@@ -125,10 +127,21 @@ class Predictor(BasePredictor):
                 ]
                 found_nodes = [node for node in required_nodes if node in object_info]
                 print(f"Found PuLID nodes: {found_nodes}")
-                return len(found_nodes) >= 3  # At least most nodes should be available
+                
+                # Print detailed information about what nodes are available
+                if len(found_nodes) < 4:
+                    all_nodes = list(object_info.keys())
+                    pulid_related = [node for node in all_nodes if 'pulid' in node.lower() or 'PuLID' in node or 'Pulid' in node]
+                    print(f"❌ Missing PuLID nodes! Required: {required_nodes}")
+                    print(f"🔍 PuLID-related nodes found: {pulid_related}")
+                    print(f"📊 Total ComfyUI nodes available: {len(all_nodes)}")
+                    return False
+                else:
+                    print(f"✅ All required PuLID nodes found: {found_nodes}")
+                    return True
         except Exception as e:
-            print(f"Error checking PuLID nodes: {e}")
-        return False
+            print(f"❌ Error checking PuLID nodes: {e}")
+            return False
     
     def restart_comfyui_server(self):
         """Restart the ComfyUI server"""
@@ -366,12 +379,8 @@ class Predictor(BasePredictor):
     
     def get_default_workflow(self) -> str:
         """Return the Flux+PuLID+Depth workflow JSON"""
-        # First check if PuLID nodes are available
-        if not self.check_pulid_nodes_loaded():
-            print("⚠️  PuLID nodes not available, using basic Flux workflow")
-            return self.get_basic_flux_workflow()
-        
-        print("✅ Using full Flux+PuLID+Depth workflow")
+        # Use the user's working workflow structure - no fallback
+        print("✅ Using Flux+PuLID+Depth workflow")
         default_workflow = {
             "108": {
                 "inputs": {
@@ -411,7 +420,7 @@ class Predictor(BasePredictor):
             },
             "120": {
                 "inputs": {
-                    "image": "DS World 2305280 (1) (1).jpg"
+                    "image": "reference_image.jpg"
                 },
                 "class_type": "LoadImage",
                 "_meta": {
@@ -420,7 +429,7 @@ class Predictor(BasePredictor):
             },
             "123": {
                 "inputs": {
-                    "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+                    "clip_name1": "t5\\google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
                     "clip_name2": "clip_l.safetensors",
                     "type": "flux",
                     "device": "default"
@@ -649,7 +658,7 @@ class Predictor(BasePredictor):
             },
             "264": {
                 "inputs": {
-                    "control_net_name": "flux-depth-controlnet-v3.safetensors"
+                    "control_net_name": "FLUX\\flux-depth-controlnet-v3.safetensors"
                 },
                 "class_type": "ControlNetLoader",
                 "_meta": {
@@ -685,198 +694,58 @@ class Predictor(BasePredictor):
         
         return json.dumps(default_workflow)
     
-    def get_basic_flux_workflow(self) -> str:
-        """Return a simple Flux workflow without PuLID (fallback)"""
-        # Use a very basic KSampler workflow instead of complex SamplerCustomAdvanced
-        basic_workflow = {
-            "3": {
-                "inputs": {
-                    "seed": 42,
-                    "steps": 20,
-                    "cfg": 1.0,
-                    "sampler_name": "euler",
-                    "scheduler": "simple",
-                    "denoise": 1,
-                    "model": ["4", 0],
-                    "positive": ["6", 0],
-                    "negative": ["7", 0],
-                    "latent_image": ["5", 0]
-                },
-                "class_type": "KSampler",
-                "_meta": {"title": "KSampler"}
-            },
-            "4": {
-                "inputs": {
-                    "unet_name": "flux1-dev-fp8.safetensors",
-                    "weight_dtype": "fp8_e4m3fn"
-                },
-                "class_type": "UNETLoader",
-                "_meta": {"title": "Load Diffusion Model"}
-            },
-            "5": {
-                "inputs": {
-                    "width": 768,
-                    "height": 1024,
-                    "batch_size": 1
-                },
-                "class_type": "EmptySD3LatentImage",
-                "_meta": {"title": "Empty Latent Image"}
-            },
-            "6": {
-                "inputs": {
-                    "guidance": 3.5,
-                    "conditioning": ["10", 0]
-                },
-                "class_type": "FluxGuidance",
-                "_meta": {"title": "FluxGuidance"}
-            },
-            "7": {
-                "inputs": {
-                    "guidance": 3.5,
-                    "conditioning": ["11", 0]
-                },
-                "class_type": "FluxGuidance",
-                "_meta": {"title": "FluxGuidance Negative"}
-            },
-            "8": {
-                "inputs": {
-                    "samples": ["3", 0],
-                    "vae": ["9", 0]
-                },
-                "class_type": "VAEDecode",
-                "_meta": {"title": "VAE Decode"}
-            },
-            "9": {
-                "inputs": {
-                    "vae_name": "ae.safetensors"
-                },
-                "class_type": "VAELoader",
-                "_meta": {"title": "Load VAE"}
-            },
-            "10": {
-                "inputs": {
-                    "text": "wearing western outfit with a cowboy hat at a bar in nashville",
-                    "clip": ["12", 0]
-                },
-                "class_type": "CLIPTextEncode",
-                "_meta": {"title": "CLIP Text Encode (Prompt)"}
-            },
-            "11": {
-                "inputs": {
-                    "text": "nsfw, nude, deformed, ugly, extra limbs, blurry",
-                    "clip": ["12", 0]
-                },
-                "class_type": "CLIPTextEncode",
-                "_meta": {"title": "CLIP Text Encode (Negative)"}
-            },
-            "12": {
-                "inputs": {
-                    "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
-                    "clip_name2": "clip_l.safetensors",
-                    "type": "flux",
-                    "device": "default"
-                },
-                "class_type": "DualCLIPLoader",
-                "_meta": {"title": "DualCLIPLoader"}
-            },
-            "13": {
-                "inputs": {
-                    "filename_prefix": "ComfyUI",
-                    "images": ["8", 0]
-                },
-                "class_type": "SaveImage",
-                "_meta": {"title": "Save Image"}
-            }
-        }
-        return json.dumps(basic_workflow)
-    
     def update_workflow_inputs(self, workflow: Dict, prompt: str, negative_prompt: str, reference_image: CogPath, 
                              width: int, height: int, steps: int, cfg: float, guidance: float, 
                              pulid_weight: float, controlnet_strength: float, seed: int, enable_face_swap: bool) -> Dict:
         """Update workflow with user inputs"""
         
-        # Check if this is the basic workflow (has node "3" KSampler) or full workflow (has node "203")
-        is_basic_workflow = "3" in workflow and workflow["3"]["class_type"] == "KSampler"
+        # Save reference image to temp location
+        import shutil
+        temp_image_path = self.temp_dir / "reference_image.jpg"
+        shutil.copy(str(reference_image), str(temp_image_path))
         
-        if is_basic_workflow:
-            # Update basic Flux workflow
-            print("🔧 Updating basic Flux workflow inputs")
-            
-            # Node 10: Main text prompt (positive)
-            if "10" in workflow:
-                workflow["10"]["inputs"]["text"] = prompt
-            
-            # Node 11: Negative prompt  
-            if "11" in workflow:
-                workflow["11"]["inputs"]["text"] = negative_prompt
-            
-            # Node 5: Image dimensions
-            if "5" in workflow:
-                workflow["5"]["inputs"]["width"] = width
-                workflow["5"]["inputs"]["height"] = height
-            
-            # Node 6: Flux guidance (positive)
-            if "6" in workflow:
-                workflow["6"]["inputs"]["guidance"] = guidance
-            
-            # Node 7: Flux guidance (negative)
-            if "7" in workflow:
-                workflow["7"]["inputs"]["guidance"] = guidance
-            
-            # Node 3: KSampler settings
-            if "3" in workflow:
-                workflow["3"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
-                workflow["3"]["inputs"]["steps"] = steps
-                workflow["3"]["inputs"]["cfg"] = cfg
+        # Update Flux+PuLID+Depth workflow
+        print("🔧 Updating Flux+PuLID+Depth workflow inputs")
         
-        else:
-            # Update full PuLID workflow
-            print("🔧 Updating full PuLID+Depth workflow inputs")
-            
-            # Save reference image to temp location
-            import shutil
-            temp_image_path = self.temp_dir / "reference_image.jpg"
-            shutil.copy(str(reference_image), str(temp_image_path))
-            
-            # Node 203: Main text prompt (positive)
-            if "203" in workflow:
-                workflow["203"]["inputs"]["text"] = prompt
-            
-            # Node 248: Negative prompt
-            if "248" in workflow:
-                workflow["248"]["inputs"]["text"] = negative_prompt
-            
-            # Node 247: KSampler settings
-            if "247" in workflow:
-                workflow["247"]["inputs"]["steps"] = steps
-                workflow["247"]["inputs"]["cfg"] = cfg
-                workflow["247"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
-            
-            # Node 113: Image dimensions
-            if "113" in workflow:
-                workflow["113"]["inputs"]["width"] = width
-                workflow["113"]["inputs"]["height"] = height
-            
-            # Node 178: PuLID weight
-            if "178" in workflow:
-                workflow["178"]["inputs"]["weight"] = pulid_weight
-            
-            # Node 196: Flux guidance
-            if "196" in workflow:
-                workflow["196"]["inputs"]["guidance"] = guidance
-            
-            # Node 263: ControlNet strength
-            if "263" in workflow:
-                workflow["263"]["inputs"]["strength"] = controlnet_strength
-                workflow["263"]["inputs"]["end_percent"] = controlnet_strength
-            
-            # Node 120: Reference image
-            if "120" in workflow:
-                workflow["120"]["inputs"]["image"] = str(temp_image_path.name)
-            
-            # Node 257: ReActor face swap enable/disable
-            if "257" in workflow:
-                workflow["257"]["inputs"]["enabled"] = enable_face_swap
+        # Node 203: Main text prompt (positive)
+        if "203" in workflow:
+            workflow["203"]["inputs"]["text"] = prompt
+        
+        # Node 248: Negative prompt
+        if "248" in workflow:
+            workflow["248"]["inputs"]["text"] = negative_prompt
+        
+        # Node 247: KSampler settings
+        if "247" in workflow:
+            workflow["247"]["inputs"]["steps"] = steps
+            workflow["247"]["inputs"]["cfg"] = cfg
+            workflow["247"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
+        
+        # Node 113: Image dimensions
+        if "113" in workflow:
+            workflow["113"]["inputs"]["width"] = width
+            workflow["113"]["inputs"]["height"] = height
+        
+        # Node 178: PuLID weight
+        if "178" in workflow:
+            workflow["178"]["inputs"]["weight"] = pulid_weight
+        
+        # Node 196: Flux guidance
+        if "196" in workflow:
+            workflow["196"]["inputs"]["guidance"] = guidance
+        
+        # Node 263: ControlNet strength
+        if "263" in workflow:
+            workflow["263"]["inputs"]["strength"] = controlnet_strength
+            workflow["263"]["inputs"]["end_percent"] = controlnet_strength
+        
+        # Node 120: Reference image
+        if "120" in workflow:
+            workflow["120"]["inputs"]["image"] = str(temp_image_path.name)
+        
+        # Node 257: ReActor face swap enable/disable
+        if "257" in workflow:
+            workflow["257"]["inputs"]["enabled"] = enable_face_swap
         
         return workflow
     
