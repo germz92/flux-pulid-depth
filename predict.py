@@ -130,21 +130,75 @@ class Predictor(BasePredictor):
         """Start the ComfyUI server"""
         os.chdir(str(self.comfy_dir))
         
+        # First, let's check what custom nodes are actually installed
+        custom_nodes_dir = self.comfy_dir / "custom_nodes"
+        print(f"🔍 Checking custom nodes directory: {custom_nodes_dir}")
+        if custom_nodes_dir.exists():
+            for item in custom_nodes_dir.iterdir():
+                if item.is_dir():
+                    print(f"  📁 Found custom node directory: {item.name}")
+                    # Check for Python files
+                    py_files = list(item.glob("*.py"))
+                    if py_files:
+                        print(f"    🐍 Python files: {[f.name for f in py_files[:5]]}")  # Show first 5
+        
         # Start ComfyUI server in the background
+        print("🚀 Starting ComfyUI server...")
         self.server_process = subprocess.Popen([
             sys.executable, "main.py", 
             "--listen", "127.0.0.1", 
             "--port", "8188",
-            "--disable-auto-launch"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            "--disable-auto-launch",
+            "--verbose"  # Add verbose logging
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+           universal_newlines=True, bufsize=1)
         
-        # Wait for server to start
-        time.sleep(15)  # Increased wait time for custom nodes to load
+        # Wait for server to start and capture initial logs
+        print("⏳ Waiting for ComfyUI server to start...")
+        
+        # Read initial server output
+        import select
+        start_time = time.time()
+        server_logs = []
+        
+        while time.time() - start_time < 20:  # Wait up to 20 seconds
+            # Check if server is responsive
+            try:
+                response = requests.get("http://127.0.0.1:8188", timeout=1)
+                if response.status_code == 200:
+                    print("✅ ComfyUI server is running")
+                    break
+            except:
+                pass
+            
+            # Capture server output
+            if self.server_process.poll() is None:  # Process is still running
+                try:
+                    # Read available output without blocking
+                    ready, _, _ = select.select([self.server_process.stdout, self.server_process.stderr], [], [], 0.1)
+                    for stream in ready:
+                        line = stream.readline()
+                        if line:
+                            line = line.strip()
+                            server_logs.append(line)
+                            print(f"🖥️  ComfyUI: {line}")
+                except:
+                    pass
+            
+            time.sleep(0.5)
+        
+        # If server didn't start, show logs
+        if self.server_process.poll() is not None:
+            print("❌ ComfyUI server failed to start")
+            print("📋 Server logs:")
+            for log in server_logs[-20:]:  # Show last 20 lines
+                print(f"   {log}")
+            raise Exception("ComfyUI server failed to start")
         
         # Check if server is running
         try:
             response = requests.get("http://127.0.0.1:8188")
-            print("ComfyUI server is running")
+            print("✅ ComfyUI server is responding")
             
             # Check available object info to see if custom nodes are loaded
             object_info_response = requests.get("http://127.0.0.1:8188/object_info")
@@ -278,6 +332,12 @@ class Predictor(BasePredictor):
     
     def get_default_workflow(self) -> str:
         """Return the Flux+PuLID+Depth workflow JSON"""
+        # First check if PuLID nodes are available
+        if not self.check_pulid_nodes_loaded():
+            print("⚠️  PuLID nodes not available, using basic Flux workflow")
+            return self.get_basic_flux_workflow()
+        
+        print("✅ Using full Flux+PuLID+Depth workflow")
         default_workflow = {
             "108": {
                 "inputs": {
@@ -591,56 +651,205 @@ class Predictor(BasePredictor):
         
         return json.dumps(default_workflow)
     
+    def get_basic_flux_workflow(self) -> str:
+        """Return a basic Flux workflow without PuLID (fallback)"""
+        basic_workflow = {
+            "1": {
+                "inputs": {
+                    "width": 768,
+                    "height": 1024,
+                    "batch_size": 1
+                },
+                "class_type": "EmptySD3LatentImage",
+                "_meta": {"title": "Empty Latent Image"}
+            },
+            "2": {
+                "inputs": {
+                    "text": "wearing western outfit with a cowboy hat at a bar in nashville",
+                    "clip": ["4", 0]
+                },
+                "class_type": "CLIPTextEncode",
+                "_meta": {"title": "CLIP Text Encode (Prompt)"}
+            },
+            "3": {
+                "inputs": {
+                    "text": "nsfw, nude, deformed, ugly, extra limbs, blurry",
+                    "clip": ["4", 0]
+                },
+                "class_type": "CLIPTextEncode", 
+                "_meta": {"title": "CLIP Text Encode (Negative)"}
+            },
+            "4": {
+                "inputs": {
+                    "clip_name1": "t5xxl_fp8_e4m3fn.safetensors",
+                    "clip_name2": "clip_l.safetensors",
+                    "type": "flux"
+                },
+                "class_type": "DualCLIPLoader",
+                "_meta": {"title": "DualCLIPLoader"}
+            },
+            "5": {
+                "inputs": {
+                    "unet_name": "flux1-dev-fp8.safetensors",
+                    "weight_dtype": "fp8_e4m3fn"
+                },
+                "class_type": "UNETLoader",
+                "_meta": {"title": "Load Diffusion Model"}
+            },
+            "6": {
+                "inputs": {
+                    "guidance": 3.5,
+                    "conditioning": ["2", 0]
+                },
+                "class_type": "FluxGuidance",
+                "_meta": {"title": "FluxGuidance"}
+            },
+            "7": {
+                "inputs": {
+                    "noise": ["9", 0],
+                    "guider": ["6", 0],
+                    "sampler": ["10", 0],
+                    "sigmas": ["11", 0],
+                    "latent_image": ["1", 0]
+                },
+                "class_type": "SamplerCustomAdvanced",
+                "_meta": {"title": "SamplerCustomAdvanced"}
+            },
+            "8": {
+                "inputs": {
+                    "samples": ["7", 0],
+                    "vae": ["12", 0]
+                },
+                "class_type": "VAEDecode",
+                "_meta": {"title": "VAE Decode"}
+            },
+            "9": {
+                "inputs": {
+                    "noise_seed": 42
+                },
+                "class_type": "RandomNoise",
+                "_meta": {"title": "RandomNoise"}
+            },
+            "10": {
+                "inputs": {
+                    "sampler_name": "euler"
+                },
+                "class_type": "KSamplerSelect",
+                "_meta": {"title": "KSamplerSelect"}
+            },
+            "11": {
+                "inputs": {
+                    "scheduler": "simple",
+                    "steps": 20,
+                    "denoise": 1.0,
+                    "model": ["5", 0]
+                },
+                "class_type": "BasicScheduler",
+                "_meta": {"title": "BasicScheduler"}
+            },
+            "12": {
+                "inputs": {
+                    "vae_name": "ae.safetensors"
+                },
+                "class_type": "VAELoader",
+                "_meta": {"title": "Load VAE"}
+            },
+            "13": {
+                "inputs": {
+                    "filename_prefix": "ComfyUI",
+                    "images": ["8", 0]
+                },
+                "class_type": "SaveImage",
+                "_meta": {"title": "Save Image"}
+            }
+        }
+        return json.dumps(basic_workflow)
+    
     def update_workflow_inputs(self, workflow: Dict, prompt: str, negative_prompt: str, reference_image: CogPath, 
                              width: int, height: int, steps: int, cfg: float, guidance: float, 
                              pulid_weight: float, controlnet_strength: float, seed: int, enable_face_swap: bool) -> Dict:
         """Update workflow with user inputs"""
         
-        # Save reference image to temp location
-        import shutil
-        temp_image_path = self.temp_dir / "reference_image.jpg"
-        shutil.copy(str(reference_image), str(temp_image_path))
+        # Check if this is the basic workflow (has node "2") or full workflow (has node "203")
+        is_basic_workflow = "2" in workflow and "203" not in workflow
         
-        # Update specific nodes by ID for this workflow
-        # Node 203: Main text prompt (positive)
-        if "203" in workflow:
-            workflow["203"]["inputs"]["text"] = prompt
+        if is_basic_workflow:
+            # Update basic Flux workflow
+            print("🔧 Updating basic Flux workflow inputs")
+            
+            # Node 2: Main text prompt (positive)
+            if "2" in workflow:
+                workflow["2"]["inputs"]["text"] = prompt
+            
+            # Node 3: Negative prompt  
+            if "3" in workflow:
+                workflow["3"]["inputs"]["text"] = negative_prompt
+            
+            # Node 1: Image dimensions
+            if "1" in workflow:
+                workflow["1"]["inputs"]["width"] = width
+                workflow["1"]["inputs"]["height"] = height
+            
+            # Node 6: Flux guidance
+            if "6" in workflow:
+                workflow["6"]["inputs"]["guidance"] = guidance
+            
+            # Node 9: Seed
+            if "9" in workflow:
+                workflow["9"]["inputs"]["noise_seed"] = seed if seed >= 0 else int(time.time())
+            
+            # Node 11: Steps
+            if "11" in workflow:
+                workflow["11"]["inputs"]["steps"] = steps
         
-        # Node 248: Negative prompt
-        if "248" in workflow:
-            workflow["248"]["inputs"]["text"] = negative_prompt
-        
-        # Node 247: KSampler settings
-        if "247" in workflow:
-            workflow["247"]["inputs"]["steps"] = steps
-            workflow["247"]["inputs"]["cfg"] = cfg
-            workflow["247"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
-        
-        # Node 113: Image dimensions
-        if "113" in workflow:
-            workflow["113"]["inputs"]["width"] = width
-            workflow["113"]["inputs"]["height"] = height
-        
-        # Node 178: PuLID weight
-        if "178" in workflow:
-            workflow["178"]["inputs"]["weight"] = pulid_weight
-        
-        # Node 196: Flux guidance
-        if "196" in workflow:
-            workflow["196"]["inputs"]["guidance"] = guidance
-        
-        # Node 263: ControlNet strength
-        if "263" in workflow:
-            workflow["263"]["inputs"]["strength"] = controlnet_strength
-            workflow["263"]["inputs"]["end_percent"] = controlnet_strength
-        
-        # Node 120: Reference image
-        if "120" in workflow:
-            workflow["120"]["inputs"]["image"] = str(temp_image_path.name)
-        
-        # Node 257: ReActor face swap enable/disable
-        if "257" in workflow:
-            workflow["257"]["inputs"]["enabled"] = enable_face_swap
+        else:
+            # Update full PuLID workflow
+            print("🔧 Updating full PuLID+Depth workflow inputs")
+            
+            # Save reference image to temp location
+            import shutil
+            temp_image_path = self.temp_dir / "reference_image.jpg"
+            shutil.copy(str(reference_image), str(temp_image_path))
+            
+            # Node 203: Main text prompt (positive)
+            if "203" in workflow:
+                workflow["203"]["inputs"]["text"] = prompt
+            
+            # Node 248: Negative prompt
+            if "248" in workflow:
+                workflow["248"]["inputs"]["text"] = negative_prompt
+            
+            # Node 247: KSampler settings
+            if "247" in workflow:
+                workflow["247"]["inputs"]["steps"] = steps
+                workflow["247"]["inputs"]["cfg"] = cfg
+                workflow["247"]["inputs"]["seed"] = seed if seed >= 0 else int(time.time())
+            
+            # Node 113: Image dimensions
+            if "113" in workflow:
+                workflow["113"]["inputs"]["width"] = width
+                workflow["113"]["inputs"]["height"] = height
+            
+            # Node 178: PuLID weight
+            if "178" in workflow:
+                workflow["178"]["inputs"]["weight"] = pulid_weight
+            
+            # Node 196: Flux guidance
+            if "196" in workflow:
+                workflow["196"]["inputs"]["guidance"] = guidance
+            
+            # Node 263: ControlNet strength
+            if "263" in workflow:
+                workflow["263"]["inputs"]["strength"] = controlnet_strength
+                workflow["263"]["inputs"]["end_percent"] = controlnet_strength
+            
+            # Node 120: Reference image
+            if "120" in workflow:
+                workflow["120"]["inputs"]["image"] = str(temp_image_path.name)
+            
+            # Node 257: ReActor face swap enable/disable
+            if "257" in workflow:
+                workflow["257"]["inputs"]["enabled"] = enable_face_swap
         
         return workflow
     
