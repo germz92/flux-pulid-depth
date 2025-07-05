@@ -11,6 +11,10 @@ build:
     - "wget"
     - "curl"
     - "git"
+    - "cmake"
+    - "build-essential"
+    - "libboost-all-dev"
+    - "pkg-config"
   python_version: "3.10"
   python_packages:
     - "torch==2.0.1"
