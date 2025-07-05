@@ -34,6 +34,10 @@ class Predictor(BasePredictor):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         
+        # Create additional directories required by ComfyUI_PuLID_Flux_ll
+        (self.models_dir / "facexlib").mkdir(exist_ok=True)
+        (self.models_dir / "insightface" / "models" / "antelopev2").mkdir(parents=True, exist_ok=True)
+        
         # Download models if they don't exist
         self.download_models()
         
@@ -69,7 +73,7 @@ class Predictor(BasePredictor):
             },
             {
                 "url": "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx",
-                "path": "ComfyUI/models/insightface/inswapper_128.onnx"
+                "path": "ComfyUI/models/insightface/models/antelopev2/inswapper_128.onnx"
             },
             {
                 "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
@@ -116,11 +120,14 @@ class Predictor(BasePredictor):
             object_info_response = requests.get("http://127.0.0.1:8188/object_info")
             if object_info_response.status_code == 200:
                 object_info = object_info_response.json()
-                if "PulidFluxModelLoader" in object_info:
-                    print("✅ PuLID custom nodes are loaded")
+                pulid_nodes = ["PulidFluxModelLoader", "PulidFluxInsightFaceLoader", "PulidFluxEvaClipLoader", "ApplyPulidFlux"]
+                loaded_pulid_nodes = [node for node in pulid_nodes if node in object_info]
+                
+                if loaded_pulid_nodes:
+                    print(f"✅ PuLID custom nodes loaded: {loaded_pulid_nodes}")
                 else:
                     print("❌ PuLID custom nodes not found in object_info")
-                    print("Available nodes:", list(object_info.keys())[:10])  # Show first 10 nodes
+                    print("Available nodes:", list(object_info.keys())[:20])  # Show first 20 nodes
             
         except Exception as e:
             print(f"Error starting ComfyUI server: {e}")
