@@ -761,7 +761,7 @@ class Predictor(BasePredictor):
             raise RuntimeError("No output images found")
     
     def download_large_models(self):
-        """Download large models at runtime (Flux ~12GB, T5 ~9GB)"""
+        """Download large models at runtime (Flux ~12GB, T5 ~9GB, ControlNet ~3GB, PuLID ~900MB, GFPGAN ~300MB)"""
         large_models = [
             {
                 "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
@@ -772,6 +772,21 @@ class Predictor(BasePredictor):
                 "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors", 
                 "path": "/src/ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
                 "size": "~9GB"
+            },
+            {
+                "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Depth/resolve/main/diffusion_pytorch_model.safetensors",
+                "path": "/src/ComfyUI/models/controlnet/FLUX/flux-depth-controlnet-v3.safetensors",
+                "size": "~3GB"
+            },
+            {
+                "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
+                "path": "/src/ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors",
+                "size": "~900MB"
+            },
+            {
+                "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
+                "path": "/src/ComfyUI/models/facerestore_models/GFPGANv1.4.pth",
+                "size": "~300MB"
             }
         ]
         
