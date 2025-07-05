@@ -587,6 +587,17 @@ class Predictor(BasePredictor):
         }
         
         response = requests.post(url, json=payload)
+        
+        # Add detailed error logging
+        if response.status_code != 200:
+            print(f"ComfyUI API Error: {response.status_code}")
+            print(f"Response text: {response.text}")
+            try:
+                error_data = response.json()
+                print(f"Error details: {error_data}")
+            except:
+                print("Could not parse error response as JSON")
+        
         response.raise_for_status()
         
         return response.json()
