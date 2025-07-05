@@ -38,6 +38,7 @@ build:
     - "fastapi==0.104.1"
     - "pydantic==2.4.2"
   run:
+    - "mkdir -p /src"
     - "cd /src && git clone https://github.com/comfyanonymous/ComfyUI.git"
     - "cd /src/ComfyUI && pip install -r requirements.txt"
     - "cd /src/ComfyUI/custom_nodes && git clone https://github.com/cubiq/PuLID_ComfyUI.git"
