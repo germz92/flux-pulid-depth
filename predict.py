@@ -60,7 +60,7 @@ class Predictor(BasePredictor):
             },
             {
                 "url": "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors",
-                "path": "ComfyUI/models/vae/ae.sft"
+                "path": "ComfyUI/models/vae/ae.safetensors"
             },
             {
                 "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
@@ -384,7 +384,7 @@ class Predictor(BasePredictor):
         default_workflow = {
             "108": {
                 "inputs": {
-                    "vae_name": "ae.sft"
+                    "vae_name": "ae.safetensors"
                 },
                 "class_type": "VAELoader",
                 "_meta": {
