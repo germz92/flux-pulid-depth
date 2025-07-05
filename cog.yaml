@@ -76,7 +76,7 @@ build:
     - "wget -O /src/ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors"
     - "wget -O /src/ComfyUI/models/insightface/models/antelopev2/inswapper_128.onnx https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx"
     - "wget -O /src/ComfyUI/models/facerestore_models/GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth"
-    - "wget -O /src/ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth https://huggingface.co/BAAI/EVA/resolve/main/eva_clip_l_14_336.pth"
+    - "wget -O /src/ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth https://huggingface.co/QuanSun/EVA-CLIP/resolve/main/EVA02_CLIP_L_336_psz14_s6B.pt"
     - "echo 'Large models (Flux ~12GB, T5 ~9GB) will be downloaded at runtime to avoid build space limits'"
     - "echo 'Verifying downloaded smaller models:'"
     - "ls -la /src/ComfyUI/models/vae/"
