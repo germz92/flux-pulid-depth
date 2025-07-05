@@ -19,27 +19,18 @@ from cog import BasePredictor, Input, Path as CogPath
 
 class Predictor(BasePredictor):
     def setup(self) -> None:
-        """Load the model into memory to make running multiple predictions efficient"""
+        """Set up the ComfyUI environment"""
         self.comfy_dir = Path("/src/ComfyUI")
-        self.models_dir = self.comfy_dir / "models"
-        self.output_dir = self.comfy_dir / "output"
-        self.temp_dir = self.comfy_dir / "temp"
+        self.temp_dir = Path("/tmp/comfyui_temp")
+        self.output_dir = Path("/src/ComfyUI/output")
         
-        # Ensure ComfyUI directory exists
-        if not self.comfy_dir.exists():
-            raise FileNotFoundError(f"ComfyUI directory not found at {self.comfy_dir}")
+        # Create temp directory
+        self.temp_dir.mkdir(exist_ok=True)
         
-        # Create necessary directories
-        self.models_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create additional directories required by ComfyUI_PuLID_Flux_ll
-        (self.models_dir / "facexlib").mkdir(exist_ok=True)
-        (self.models_dir / "insightface" / "models" / "antelopev2").mkdir(parents=True, exist_ok=True)
-        
-        # Download models if they don't exist
-        self.download_models()
+        # Verify models were downloaded at build time
+        print("🔍 Verifying models exist from build time...")
+        if not self.check_models_exist():
+            raise RuntimeError("❌ Required models missing! Check build logs.")
         
         # Start ComfyUI server
         self.start_comfyui_server()
@@ -51,67 +42,31 @@ class Predictor(BasePredictor):
         
         print("✅ Setup complete - PuLID nodes are available")
     
-    def download_models(self):
-        """Download required models if they don't exist"""
-        models_to_download = [
-            {
-                "url": "https://huggingface.co/Kijai/flux-fp8/resolve/main/flux1-dev-fp8.safetensors",
-                "path": "ComfyUI/models/diffusion_models/flux1-dev-fp8.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/ffxvs/vae-flux/resolve/main/ae.safetensors",
-                "path": "ComfyUI/models/vae/ae.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
-                "path": "ComfyUI/models/clip/clip_l.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn.safetensors",
-                "path": "ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/Shakker-Labs/FLUX.1-dev-ControlNet-Depth/resolve/main/diffusion_pytorch_model.safetensors",
-                "path": "ComfyUI/models/controlnet/FLUX/flux-depth-controlnet-v3.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/guozinan/PuLID/resolve/main/pulid_flux_v0.9.1.safetensors",
-                "path": "ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors"
-            },
-            {
-                "url": "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx",
-                "path": "ComfyUI/models/insightface/models/antelopev2/inswapper_128.onnx"
-            },
-            {
-                "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
-                "path": "ComfyUI/models/facerestore_models/GFPGANv1.4.pth"
-            },
-            {
-                "url": "https://huggingface.co/BAAI/EVA/resolve/main/eva_clip_l_14_336.pth",
-                "path": "ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth"
-            }
+    def check_models_exist(self):
+        """Verify that all required models exist (downloaded at build time)"""
+        required_models = [
+            "/src/ComfyUI/models/diffusion_models/flux1-dev-fp8.safetensors",
+            "/src/ComfyUI/models/vae/ae.safetensors",
+            "/src/ComfyUI/models/clip/clip_l.safetensors",
+            "/src/ComfyUI/models/clip/t5/google_t5-v1_1-xxl_encoderonly-fp8_e4m3fn.safetensors",
+            "/src/ComfyUI/models/controlnet/FLUX/flux-depth-controlnet-v3.safetensors",
+            "/src/ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors",
+            "/src/ComfyUI/models/insightface/models/antelopev2/inswapper_128.onnx",
+            "/src/ComfyUI/models/facerestore_models/GFPGANv1.4.pth",
+            "/src/ComfyUI/models/clip/EVA02-CLIP-L-14-336.pth"
         ]
         
-        for model in models_to_download:
-            model_path = Path(f"/src/{model['path']}")
-            if not model_path.exists():
-                print(f"Downloading {model_path.name}...")
-                try:
-                    self.download_file(model['url'], model_path)
-                    print(f"Downloaded {model_path.name}")
-                except Exception as e:
-                    print(f"Failed to download {model_path.name}: {e}")
-            else:
-                print(f"Model {model_path.name} already exists, skipping download")
-    
-    def download_file(self, url: str, path: Path):
-        """Download a file from URL to the specified path"""
-        import subprocess
-        path.parent.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(["wget", "-O", str(path), url], capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"wget failed: {result.stderr}")
-            raise Exception(f"Download failed: {result.stderr}")
+        missing_models = []
+        for model_path in required_models:
+            if not Path(model_path).exists():
+                missing_models.append(model_path)
+        
+        if missing_models:
+            print(f"❌ Missing models: {missing_models}")
+            return False
+        else:
+            print("✅ All required models found")
+            return True
     
     def check_pulid_nodes_loaded(self) -> bool:
         """Check if PuLID nodes are properly loaded"""
