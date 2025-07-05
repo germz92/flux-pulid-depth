@@ -68,7 +68,7 @@ class Predictor(BasePredictor):
                 "path": "ComfyUI/models/pulid/pulid_flux_v0.9.1.safetensors"
             },
             {
-                "url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/inswapper_128.onnx",
+                "url": "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx",
                 "path": "ComfyUI/models/insightface/inswapper_128.onnx"
             },
             {
