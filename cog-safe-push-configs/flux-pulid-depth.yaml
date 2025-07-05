@@ -1,0 +1,17 @@
+production_model: germz92/flux-pulid-depth
+test_model: germz92/flux-pulid-depth-staging
+test_hardware: gpu-l40s
+predict:
+  compare_outputs: false
+  predict_timeout: 1200
+  test_cases:
+    - inputs:
+        prompt: 'professional portrait of a person'
+        width: 768
+        height: 1024
+        num_inference_steps: 10
+        guidance_scale: 3.5
+        pulid_weight: 0.8
+        controlnet_strength: 0.6
+        enable_face_swap: true
+        return_temp_files: true
